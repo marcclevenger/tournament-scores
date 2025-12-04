@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Quick Score Update</title>
+  <style>
+    body { font-family: -apple-system, sans-serif; padding:20px; max-width:600px; margin:auto; background:#f9f9f9; }
+    textarea { width:100%; height:70vh; font-size:18px; padding:12px; border:2px solid #333; border-radius:8px; }
+    button { font-size:20px; padding:15px; margin-top:15px; width:100%; background:#000; color:white; border:none; border-radius:8px; }
+    .ok { color:green; font-weight:bold; font-size:18px; }
+  </style>
+</head>
+<body>
+
+<h1>Quick Score Update</h1>
+<p>Type or paste the new scores exactly how they should appear on the site.</p>
+
+<textarea id="newcontent" placeholder="Example:
+Dec 4, 2025
+Eagles  28 – Falcons  21
+Lions   35 – Bears   14"></textarea>
+
+<button onclick="save()">Save & Update Website →</button>
+<p id="msg"></p>
+
+<script>
+async function save() {
+  const content = document.getElementById('newcontent').value.trim();
+  if (!content) return alert("Please type the scores first");
+
+  let token = localStorage.getItem('token');
+  if (!token) {
+    token = prompt("GitHub token (you only do this once):");
+    if (!token) return;
+    localStorage.setItem('token', token);
+  }
+
+  document.getElementById('msg').textContent = "Saving…";
+
+  try {
+    // Get current file version
+    const info = await fetch('https://api.github.com/repos/marcclevenger/tournament-scores/contents/scores.html')
+      .then(r => r.json());
+    
+    // Update the file
+    const res = await fetch('https://api.github.com/repos/marcclevenger/tournament-scores/contents/scores.html', {
+      method: 'PUT',
+      headers: { 
+        Authorization: 'token '+token,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        message: 'Score update – ' + new Date().toLocaleString(),
+        content: btoa(unescape(encodeURIComponent(content))),
+        sha: info.sha
+      })
+    });
+
+    if (res.ok) {
+      document.getElementById('msg').innerHTML = "✓ Saved!<br>Refresh your site in 30–60 seconds";
+      document.getElementById('msg').className = "ok";
+    } else {
+      document.getElementById('msg').textContent = "Error – check token";
+    }
+  } catch(e) {
+    document.getElementById('msg').textContent = "Network error";
+  }
+}
+</script>
+
+</body>
+</html>
