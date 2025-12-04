@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Quick Score Update</title>
+  <style>
+    body { font-family: -apple-system, sans-serif; padding:20px; max-width:600px; margin:auto; }
+    textarea { width:100%; height:70vh; font-size:18px; }
+    button { font-size:20px; padding:15px; margin-top:10px; width:100%; }
+    .ok { color:green; font-weight:bold; }
+  </style>
+</head>
+<body>
+
+<h1>Quick Score Update</h1>
+<textarea id="newcontent" placeholder="Just type or paste the new scores here…"></textarea>
+<button onclick="save()">Save & Update Website →</button>
+<p id="msg"></p>
+
+<script>
+async function save() {
+  const content = document.getElementById('newcontent').value.trim();
+  if (!content) return alert("Please type something first");
+
+  let token = localStorage.getItem('token');
+  if (!token) {
+    token = prompt("GitHub token (only once):");
+    if (!token) return;
+    localStorage.setItem('token', token);
+  }
+
+  document.getElementById('msg').textContent = "Saving…";
+
+  try {
+    // Get current file version (sha)
+    const info = await fetch('https://api.github.com/repos/YOUR-USERNAME/YOUR-REPO/contents/scores.html').then(r=>r.json());
+    
+    // Save the new content
+    const res = await fetch('https://api.github.com/repos/YOUR-USERNAME/YOUR-REPO/contents/scores.html', {
+      method: 'PUT',
+      headers: { Authorization: 'token '+token, 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        message: 'Score update – ' + new Date().toLocaleDateString(),
+        content: btoa(unescape(encodeURIComponent(content))),
+        sha: info.sha
+      })
+    });
+
+    if (res.ok) {
+      document.getElementById('msg').textContent = "Saved! Refresh your site in 30–60 seconds";
+      document.getElementById('msg').className = "ok";
+    } else {
+      document.getElementById('msg').textContent = "Error – wrong token?";
+    }
+  } catch(e) { document.getElementById('msg').textContent = "Network problem"; }
+}
+</script>
+</body>
+</html>
