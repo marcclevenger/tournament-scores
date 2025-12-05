@@ -2,83 +2,92 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Save Scores Permanently</title>
+  <title>Quick Score Update</title>
   <style>
-    body {font-family:-apple-system,sans-serif;padding:40px;background:#f0f8ff;text-align:center;}
-    h1 {font-size:28px;margin-bottom:20px;color:#1e40af;}
-    p {font-size:18px;color:#1e3a8a;margin-bottom:30px;}
-    button {font-size:22px;padding:18px 36px;background:#1e40af;color:white;border:none;border-radius:12px;}
-    .ok {color:green;font-size:20px;font-weight:bold;margin-top:20px;}
-    .error {color:red;font-size:18px;}
+    body { font-family: -apple-system, sans-serif; padding:20px; max-width:600px; margin:auto; background:#f9f9f9; }
+    textarea { width:100%; height:60vh; font-size:18px; padding:12px; border:2px solid #333; border-radius:8px; font-family:monospace; }
+    button { font-size:20px; padding:15px; margin-top:15px; width:100%; background:#000; color:white; border:none; border-radius:8px; cursor:pointer; }
+    button:hover { background:#333; }
+    .ok { color:green; font-weight:bold; font-size:18px; }
+    .error { color:red; }
+    #current { margin-top:10px; padding:10px; background:white; border-radius:5px; font-family:monospace; }
   </style>
 </head>
 <body>
-  <h1>NCPL Score Saver</h1>
-  <p>1. Open your main tracker in another tab<br>
-     2. Enter all the scores there<br>
-     3. Come back here and tap the button</p>
-  <button onclick="save()">SAVE ALL SCORES PERMANENTLY</button>
-  <p id="msg"></p>
+
+<h1>Quick Score Update</h1>
+<p>Enter scores for your NCPL schedule (one line per game: Score A space Score B). E.g., "28 21" for first game (Notre Dame vs St. Michael's 8).</p>
+<div id="current">Loading current scores...</div>
+<textarea id="newcontent" placeholder="Example:
+28 21
+0 0
+35 14
+... (14 lines total, use 0 0 for unplayed games)"></textarea>
+
+<button onclick="save()">Save & Update Website →</button>
+<p id="msg"></p>
 
 <script>
-async function save() {
-  const main = window.open('https://marcclevenger.github.io/tournament-scores/', '_blank');
-  setTimeout(async () => {
-    try {
-      await new Promise(r => setTimeout(r, 4000)); // wait for page + JS to load
-      const scores = await main.eval(`(() => {
-        const s = [];
-        for(let i=0; i<14; i++) {
-          const a = document.getElementById('scoreA-'+i)?.value || '0';
-          const b = document.getElementById('scoreB-'+i)?.value || '0';
-          s.push(a + ',' + b);
-        }
-        return s.join(';');
-      })()`);
-
-      let token = localStorage.getItem('gh_token');
-      if (!token) {
-        token = prompt('GitHub Personal Access Token (only once):');
-        if (!token) return;
-        localStorage.setItem('gh_token', token);
-      }
-
-      document.getElementById('msg').innerHTML = 'Saving to GitHub…';
-
-      const info = await fetch('https://api.github.com/repos/marcclevenger/tournament-scores/contents/index.html')
-        .then(r => r.json());
-
-      let content = atob(info.content);
-      const marker = '// PRELOADED_SCORES';
-      if (!content.includes(marker)) {
-        content = content.replace(
-          'renderSchedule();',
-          `if(window.PRELOADED_SCORES){const a=window.PRELOADED_SCORES.split(';');a.forEach((p,i)=>{const[v1,v2]=p.split(',');const e1=document.getElementById('scoreA-'+i);const e2=document.getElementById('scoreB-'+i);if(e1)e1.value=v1;if(e2)e2.value=v2;});updateStandings();}\n  renderSchedule();`
-        );
-        content = content.replace('</head>', '<script>window.PRELOADED_SCORES="${SCORES}"</script></head>');
-      }
-      const finalContent = content.replace(/window\.PRELOADED_SCORES="[^"]*"/, `window.PRELOADED_SCORES="${scores}"`);
-
-      const res = await fetch('https://api.github.com/repos/marcclevenger/tournament-scores/contents/index.html', {
-        method: 'PUT',
-        headers: {Authorization:'token '+token,'Content-Type':'application/json'},
-        body: JSON.stringify({
-          message: 'Scores saved – ' + new Date().toLocaleString(),
-          content: btoa(unescape(encodeURIComponent(finalContent))),
-          sha: info.sha
-        })
-      });
-
-      if (res.ok) {
-        document.getElementById('msg').innerHTML = '<div class="ok">All scores saved forever!<br>Refresh your main site in 30 seconds</div>';
-      } else {
-        document.getElementById('msg').innerHTML = '<div class="error">Failed – check token</div>';
-      }
-    } catch(e) {
-      document.getElementById('msg').innerHTML = '<div class="error">Error: '+e.message+'</div>';
+// Load current scores (if any preloaded)
+fetch('https://raw.githubusercontent.com/marcclevenger/tournament-scores/main/index.html')
+  .then(r => r.text())
+  .then(text => {
+    const match = text.match(/window\.PRELOADED_SCORES="([^"]*)"/);
+    if (match) {
+      const scores = match[1].split(';').map(p => p.split(',')).flat();
+      document.getElementById('current').innerHTML = '<strong>Current scores:</strong> ' + scores.join(' / ');
+    } else {
+      document.getElementById('current').innerHTML = '<strong>No scores saved yet—add them!</strong>';
     }
-  }, 1000);
+  });
+
+async function save() {
+  let input = document.getElementById('newcontent').value.trim();
+  if (!input) return document.getElementById('msg').innerHTML = '<span class="error">Enter scores first!</span>';
+
+  const lines = input.split('\n').filter(l => l.trim());
+  if (lines.length !== 14) return document.getElementById('msg').innerHTML = '<span class="error">Need exactly 14 lines (one per game)!</span>';
+
+  let formatted = lines.map(line => {
+    const [a, b] = line.trim().split(/\s+/);
+    return (parseInt(a) || 0) + ',' + (parseInt(b) || 0);
+  }).join(';');
+
+  let token = localStorage.getItem('token');
+  if (!token) {
+    token = prompt("GitHub token (one-time):");
+    if (!token) return;
+    localStorage.setItem('token', token);
+  }
+
+  document.getElementById('msg').textContent = "Saving…";
+
+  try {
+    const info = await fetch('https://api.github.com/repos/marcclevenger/tournament-scores/contents/index.html').then(r=>r.json());
+    let content = atob(info.content);
+    content = content.replace(/window\.PRELOADED_SCORES="[^"]*"/, `window.PRELOADED_SCORES="${formatted}"`);
+
+    const res = await fetch('https://api.github.com/repos/marcclevenger/tournament-scores/contents/index.html', {
+      method: 'PUT',
+      headers: { Authorization: 'token '+token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: 'Updated scores – ' + new Date().toLocaleString(),
+        content: btoa(unescape(encodeURIComponent(content))),
+        sha: info.sha
+      })
+    });
+
+    if (res.ok) {
+      document.getElementById('msg').innerHTML = "✓ Saved!<br>Refresh main site in 30–60s";
+      document.getElementById('msg').className = "ok";
+    } else {
+      document.getElementById('msg').innerHTML = '<span class="error">Save failed—check token</span>';
+    }
+  } catch(e) {
+    document.getElementById('msg').innerHTML = '<span class="error">Network error: ' + e.message + '</span>';
+  }
 }
 </script>
+
 </body>
 </html>
