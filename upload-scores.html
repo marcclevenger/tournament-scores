@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Save Scores Permanently</title>
+  <style>
+    body {font-family:-apple-system,sans-serif;padding:40px;background:#f0f8ff;text-align:center;}
+    h1 {font-size:28px;margin-bottom:20px;color:#1e40af;}
+    p {font-size:18px;color:#1e3a8a;margin-bottom:30px;}
+    button {font-size:22px;padding:18px 36px;background:#1e40af;color:white;border:none;border-radius:12px;}
+    .ok {color:green;font-size:20px;font-weight:bold;margin-top:20px;}
+    .error {color:red;font-size:18px;}
+  </style>
+</head>
+<body>
+  <h1>NCPL Score Saver</h1>
+  <p>1. Open your main tracker in another tab<br>
+     2. Enter all the scores there<br>
+     3. Come back here and tap the button</p>
+  <button onclick="save()">SAVE ALL SCORES PERMANENTLY</button>
+  <p id="msg"></p>
+
+<script>
+async function save() {
+  const main = window.open('https://marcclevenger.github.io/tournament-scores/', '_blank');
+  setTimeout(async () => {
+    try {
+      await new Promise(r => setTimeout(r, 4000)); // wait for page + JS to load
+      const scores = await main.eval(`(() => {
+        const s = [];
+        for(let i=0; i<14; i++) {
+          const a = document.getElementById('scoreA-'+i)?.value || '0';
+          const b = document.getElementById('scoreB-'+i)?.value || '0';
+          s.push(a + ',' + b);
+        }
+        return s.join(';');
+      })()`);
+
+      let token = localStorage.getItem('gh_token');
+      if (!token) {
+        token = prompt('GitHub Personal Access Token (only once):');
+        if (!token) return;
+        localStorage.setItem('gh_token', token);
+      }
+
+      document.getElementById('msg').innerHTML = 'Saving to GitHub…';
+
+      const info = await fetch('https://api.github.com/repos/marcclevenger/tournament-scores/contents/index.html')
+        .then(r => r.json());
+
+      let content = atob(info.content);
+      const marker = '// PRELOADED_SCORES';
+      if (!content.includes(marker)) {
+        content = content.replace(
+          'renderSchedule();',
+          `if(window.PRELOADED_SCORES){const a=window.PRELOADED_SCORES.split(';');a.forEach((p,i)=>{const[v1,v2]=p.split(',');const e1=document.getElementById('scoreA-'+i);const e2=document.getElementById('scoreB-'+i);if(e1)e1.value=v1;if(e2)e2.value=v2;});updateStandings();}\n  renderSchedule();`
+        );
+        content = content.replace('</head>', '<script>window.PRELOADED_SCORES="${SCORES}"</script></head>');
+      }
+      const finalContent = content.replace(/window\.PRELOADED_SCORES="[^"]*"/, `window.PRELOADED_SCORES="${scores}"`);
+
+      const res = await fetch('https://api.github.com/repos/marcclevenger/tournament-scores/contents/index.html', {
+        method: 'PUT',
+        headers: {Authorization:'token '+token,'Content-Type':'application/json'},
+        body: JSON.stringify({
+          message: 'Scores saved – ' + new Date().toLocaleString(),
+          content: btoa(unescape(encodeURIComponent(finalContent))),
+          sha: info.sha
+        })
+      });
+
+      if (res.ok) {
+        document.getElementById('msg').innerHTML = '<div class="ok">All scores saved forever!<br>Refresh your main site in 30 seconds</div>';
+      } else {
+        document.getElementById('msg').innerHTML = '<div class="error">Failed – check token</div>';
+      }
+    } catch(e) {
+      document.getElementById('msg').innerHTML = '<div class="error">Error: '+e.message+'</div>';
+    }
+  }, 1000);
+}
+</script>
+</body>
+</html>
